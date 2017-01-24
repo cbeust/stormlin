@@ -15,25 +15,23 @@ interface HasTable {
     val tableName: String
 }
 
-data class SqlBuilder<T>(var operation: Operation = SqlBuilder.Operation.SELECT,
+fun select(vararg fields: String) : SqlBuilder {
+    return SqlBuilder(operation = SqlBuilder.Operation.SELECT).apply {
+        if (fields.any()) this.fields = fields.toList()
+    }
+}
+
+data class SqlBuilder(var operation: Operation = SqlBuilder.Operation.SELECT,
         var table: String? = null,
         var fields : List<String> = listOf("*"),
-        val whereClauses: MutableList<WhereClause<T>> = mutableListOf(),
-        var into: KClass<T>? = null)
-    where T: Any {
+        val whereClauses: MutableList<WhereClause> = mutableListOf()) {
 
     enum class Operation {
         SELECT
     }
 
-    fun from(table: String) : SqlBuilder<T> {
+    fun from(table: String) : SqlBuilder {
         return this.copy(table = table)
-    }
-
-    fun select(vararg fields: String) : SqlBuilder<T> {
-        return this.copy(operation = Operation.SELECT).apply {
-            if (fields.any()) this.fields = fields.toList()
-        }
     }
 
     fun toSql() : String {
@@ -65,10 +63,10 @@ data class SqlBuilder<T>(var operation: Operation = SqlBuilder.Operation.SELECT,
         fun toSql() = sqlOp
     }
 
-    class WhereClause<T>(val builder: SqlBuilder<T>, var field: String? = null,
+    class WhereClause(val builder: SqlBuilder, var field: String? = null,
             var conditional: Conditional? = null,
-            var arg: String? = null) where T: Any {
-        fun eq(arg: Any) : SqlBuilder<T> {
+            var arg: String? = null) {
+        fun eq(arg: Any) : SqlBuilder {
             return builder.apply {
                 val sqlArg = if (arg is String) "'${arg.toString()}'" else arg.toString()
                 whereClauses.add(WhereClause(this, field, Conditional.EQ, sqlArg))
@@ -80,16 +78,26 @@ data class SqlBuilder<T>(var operation: Operation = SqlBuilder.Operation.SELECT,
         }
     }
 
-    fun where(s: String): WhereClause<T> {
+    fun where(s: String): WhereClause {
         return WhereClause(this, field = s)
     }
+
+//    fun  query(eq: Any): Any {}
 }
 
 class Orm(val conn: Connection) {
-    fun <T> into(cls: KClass<T>) : SqlBuilder<T> where T: Any {
-        return SqlBuilder(into = cls)
+    var into: KClass<*>? = null
+    var builder: SqlBuilder? = null
+
+    fun query(builder: SqlBuilder) : Orm {
+        this.builder = builder
+        return this
     }
 
+    fun <T : Any> into(cls: KClass<T>) : SqlBuilder {
+        into = cls
+        return SqlBuilder()
+    }
 
     private fun <T> runQuery(conn: Connection, query: String, cls: Class<T>, kclass: KClass<*>) : List<T> {
         fun columnName(property: KProperty1<*, *>) : String {

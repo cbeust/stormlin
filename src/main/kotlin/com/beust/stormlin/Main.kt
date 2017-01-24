@@ -7,9 +7,9 @@ fun main(argv: Array<String>) {
     val conn = DriverManager.getConnection("jdbc:mysql://localhost:3306/perry", "root", "aaaa")
     val orm = Orm(conn)
 
-    orm.into(Cycle::class).select("a", "b").from("cycles")
-            .where("number").eq("ced")
-            .run()
+    val cycles = orm.query(select("a", "b").from("cycles").where("number").eq("ced"))
+        .into(Cycle::class)
+        .run()
 }
 
 fun queryStrings(orm: Orm) {

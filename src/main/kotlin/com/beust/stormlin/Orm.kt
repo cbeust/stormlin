@@ -11,7 +11,86 @@ import kotlin.reflect.KProperty1
 import kotlin.reflect.jvm.javaSetter
 import kotlin.reflect.memberProperties
 
+interface HasTable {
+    val tableName: String
+}
+
+data class SqlBuilder<T>(var operation: Operation = SqlBuilder.Operation.SELECT,
+        var table: String? = null,
+        var fields : List<String> = listOf("*"),
+        val whereClauses: MutableList<WhereClause<T>> = mutableListOf(),
+        var into: KClass<T>? = null)
+    where T: Any {
+
+    enum class Operation {
+        SELECT
+    }
+
+    fun from(table: String) : SqlBuilder<T> {
+        return this.copy(table = table)
+    }
+
+    fun select(vararg fields: String) : SqlBuilder<T> {
+        return this.copy(operation = Operation.SELECT).apply {
+            if (fields.any()) this.fields = fields.toList()
+        }
+    }
+
+    fun toSql() : String {
+        val result = StringBuilder().apply {
+            when(operation) {
+                Operation.SELECT -> append("SELECT " + fields.joinToString(",") + " ")
+            }
+
+            table?.let {
+                append("FROM $it")
+            }
+
+            if (whereClauses.any()) {
+                append(" WHERE " + whereClauses.map { it.toString() }.joinToString(", "))
+            }
+        }
+
+        return result.toString()
+    }
+
+    fun run() : List<T> {
+        println("SQL: \"" + toSql() + "\"")
+        return emptyList()
+    }
+
+    enum class Conditional(val sqlOp: String) {
+        EQ("=");
+
+        fun toSql() = sqlOp
+    }
+
+    class WhereClause<T>(val builder: SqlBuilder<T>, var field: String? = null,
+            var conditional: Conditional? = null,
+            var arg: String? = null) where T: Any {
+        fun eq(arg: Any) : SqlBuilder<T> {
+            return builder.apply {
+                val sqlArg = if (arg is String) "'${arg.toString()}'" else arg.toString()
+                whereClauses.add(WhereClause(this, field, Conditional.EQ, sqlArg))
+            }
+        }
+
+        override fun toString() : String {
+            return field + " " + Conditional.EQ.toSql() + " $arg"
+        }
+    }
+
+    fun where(s: String): WhereClause<T> {
+        return WhereClause(this, field = s)
+    }
+}
+
 class Orm(val conn: Connection) {
+    fun <T> into(cls: KClass<T>) : SqlBuilder<T> where T: Any {
+        return SqlBuilder(into = cls)
+    }
+
+
     private fun <T> runQuery(conn: Connection, query: String, cls: Class<T>, kclass: KClass<*>) : List<T> {
         fun columnName(property: KProperty1<*, *>) : String {
             val columnName = property.annotations.find { it.annotationClass == Column::class }?.let {

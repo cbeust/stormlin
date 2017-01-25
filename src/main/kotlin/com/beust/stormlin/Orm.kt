@@ -81,9 +81,8 @@ data class SqlBuilder(var operation: Operation = SqlBuilder.Operation.SELECT,
 }
 
 class Orm(val conn: Connection) {
-    inner class Runner<T>(factory: () -> T) {
+    inner class Runner<T>(val factory: () -> T) where T: Any{
         var builder: SqlBuilder? = null
-        var factory: (() -> T)? = null
 
         fun query(builder: SqlBuilder) : Runner<T> {
             this.builder = builder
@@ -91,72 +90,22 @@ class Orm(val conn: Connection) {
         }
 
         fun run() : List<T> {
-            builder?.let {
-                println("SQL: \"" + it.toSql() + "\"")
-                val instance = factory!!()
-                return runQuery(conn, it.toSql(), instance::class.java, instance::class)
+            if (builder != null) {
+                println("SQL: \"" + builder!!.toSql() + "\"")
+                return runQuery(conn, builder!!.toSql(), factory)
+            } else {
+                throw IllegalArgumentException(if (builder == null) "Null SqlBuilder" else "Null factory")
             }
-        }
-
-        private fun runQuery(conn: Connection, query: String, cls: Class<T>, kclass: KClass<*>) : List<T> {
-            fun columnName(property: KProperty1<*, *>) : String {
-                val columnName = property.annotations.find { it.annotationClass == Column::class }?.let {
-                    (it as Column).name
-                } ?: property.name
-                return columnName
-            }
-
-            val result = arrayListOf<T>()
-
-            conn.createStatement().let { statement ->
-                val rs = statement.executeQuery(query)
-                val fieldNames = hashMapOf<String, KMutableProperty1<*, *>>()
-                kclass.memberProperties.forEach {
-                    if (it is KMutableProperty1) {
-                        fieldNames.put(columnName(it), it)
-                    } else {
-                        warn("Ignoring read-only property $it")
-                    }
-                }
-
-                fun toKotlinValue(v: Any) : Any {
-                    return when (v) {
-                        is Integer -> v.toInt()
-                        else -> v
-                    }
-                }
-
-                while (rs.next()) {
-                    val current = cls.newInstance() as T
-                    (1..rs.metaData.columnCount).forEach { index ->
-                        val value = rs.getObject(index)
-                        val columnName = rs.metaData.getColumnName(index)
-                        val property = fieldNames[columnName]
-                        if (property != null) {
-                            try {
-                                property.javaSetter!!.invoke(current, value)
-                            } catch(ex: Exception) {
-                                warn("Couldn't set $value of type ${value.javaClass} on object property $property " +
-                                        "for object $current")
-                            }
-//                        println("Mapping $value to $columnName")
-                        } else {
-                            warn("Ignoring value $value, no mapping found for $columnName in class " + cls.name)
-                        }
-                    }
-                    result.add(current)
-                }
-            }
-            return result
         }
     }
+
 
     fun <T : Any> into(factory: () -> T) : Runner<T> {
         return Runner<T>(factory)
     }
 
 
-    fun <T> createProxy(itf: KClass<*>): T {
+    fun <T> createProxy(itf: KClass<*>): T where T: Any {
         val conn = DriverManager.getConnection("jdbc:mysql://localhost:3306/perry", "root", "aaaa")
         println("Connection established: $conn")
 
@@ -181,7 +130,8 @@ class Orm(val conn: Connection) {
                     } else {
                         rt.java
                     }
-                val queryResult = runQuery(conn, query2, actualType, actualType.kotlin)
+                val factory = actualType.getConstructor()
+                val queryResult = runQuery(conn, query2, factory as () -> T)
                 if (Collection::class.java.isAssignableFrom(method.returnType)) {
                     return queryResult
                 } else {
@@ -198,10 +148,64 @@ class Orm(val conn: Connection) {
         return proxy
     }
 
-    fun warn(s: String) = println("[Warning] $s")
 
     fun log(s: String) = println(s)
 }
+
+private fun <T> runQuery(conn: Connection, query: String, factory: () -> T) : List<T> where T: Any {
+    fun columnName(property: KProperty1<*, *>) : String {
+        val columnName = property.annotations.find { it.annotationClass == Column::class }?.let {
+            (it as Column).name
+        } ?: property.name
+        return columnName
+    }
+
+    val result = arrayListOf<T>()
+    val instance = factory()
+    val kclass = instance::class
+    conn.createStatement().let { statement ->
+        val rs = statement.executeQuery(query)
+        val fieldNames = hashMapOf<String, KMutableProperty1<*, *>>()
+        kclass.memberProperties.forEach {
+            if (it is KMutableProperty1) {
+                fieldNames.put(columnName(it), it)
+            } else {
+                warn("Ignoring read-only property $it")
+            }
+        }
+
+        fun toKotlinValue(v: Any) : Any {
+            return when (v) {
+                is Integer -> v.toInt()
+                else -> v
+            }
+        }
+
+        while (rs.next()) {
+            val current = factory()
+            (1..rs.metaData.columnCount).forEach { index ->
+                val value = rs.getObject(index)
+                val columnName = rs.metaData.getColumnName(index)
+                val property = fieldNames[columnName]
+                if (property != null) {
+                    try {
+                        property.javaSetter!!.invoke(current, value)
+                    } catch(ex: Exception) {
+                        warn("Couldn't set $value of type ${value.javaClass} on object property $property " +
+                                "for object $current")
+                    }
+//                        println("Mapping $value to $columnName")
+                } else {
+                    warn("Ignoring value $value, no mapping found for $columnName in class " + instance::class)
+                }
+            }
+            result.add(current)
+        }
+    }
+    return result
+}
+
+fun warn(s: String) = println("[Warning] $s")
 
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)

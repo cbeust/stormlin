@@ -8,9 +8,10 @@ fun main(argv: Array<String>) {
     val orm = Orm(conn)
 
     val cycles = orm
-        .into(::Cycle)
-        .query(select("a", "b").from("cycles").where("number").eq("ced"))
+        .into{ -> Cycle() }
+        .query(select().from("cycles").where("number").eq(7))
         .run()
+    println("Cycles: " + cycles)
 }
 
 fun queryStrings(orm: Orm) {

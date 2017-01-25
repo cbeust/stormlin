@@ -18,7 +18,9 @@ val p = project {
 
     dependenciesTest {
         compile("org.testng:testng:6.10",
-                "org.assertj:assertj-core:3.5.2")
+                "org.assertj:assertj-core:3.5.2",
+                "com.almworks.sqlite4java:sqlite4java:1.0.392",
+                "org.xerial:sqlite-jdbc:3.16.1")
     }
 
     application {

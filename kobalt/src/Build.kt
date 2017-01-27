@@ -12,7 +12,7 @@ val p = project {
 
     dependencies {
         compile(
-        	"org.jetbrains.kotlin:kotlin-reflect:1.0.6",
+        	"org.jetbrains.kotlin:kotlin-reflect:1.1.0-beta-17",
         	"mysql:mysql-connector-java:6.0.5")
     }
 

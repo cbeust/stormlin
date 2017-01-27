@@ -15,7 +15,7 @@ class DbTest {
     private val file = File(System.getProperty("java.io.tmpdir"), "stormlinTest.db")
     private val urlFile = "jdbc:sqlite:" + file.absolutePath
     private val urlMemory = "jdbc:sqlite::memory:"
-    private val connection = DriverManager.getConnection(urlFile)
+    private val connection = DriverManager.getConnection(urlMemory)
 
     @BeforeClass
     fun bc() {
@@ -55,21 +55,24 @@ class DbTest {
         }
     }
 
-    @Test
-    fun simpleInMemoryTest() {
-        listOf(
-            "drop table if exists test",
-            "create table test(id integer primary key, text varchar(80))",
-            "insert into test values(1, \"foo\")",
-            "insert into test values(2, \"bar\")"
-        ).forEach {
+    private fun execute(connection: Connection, sql: List<String>) {
+        sql.forEach {
             try {
                 connection.createStatement().execute(it)
             } catch(ex: SQLiteException) {
                 println("ERROR while running $it")
-                ex.printStackTrace()
+                throw ex
             }
         }
+    }
+
+    @Test
+    fun simpleInMemoryTest() {
+        execute(connection, listOf (
+            "drop table if exists test",
+            "create table test(id integer primary key, text varchar(80))",
+            "insert into test values(1, \"foo\")",
+            "insert into test values(2, \"bar\")"))
 
         fun getId(id: Int) : String {
             val rs = connection.createStatement().executeQuery("select * from test where id = $id")
@@ -105,26 +108,62 @@ class DbTest {
         assertThat(cycles[2].start).isEqualTo(150)
     }
 
-    @Test
-    fun insert() {
-        fun findInsertedCycle(storm: Orm, number: Int) : Cycle? {
-            val insertedCycles = storm
-                    .into { -> Cycle() }
-                    .query(select().from("cycles").where("number").eq(number))
-                    .run()
-            return if (insertedCycles.size == 1) insertedCycles.first() else null
+//    @Test
+//    fun insertWithKey() {
+//        fun findInsertedCycle(storm: Orm, number: Int) : Cycle? {
+//            return storm
+//                    .into { -> Cycle() }
+//                    .query(select().from("cycles").where("number").eq(number))
+//                    .runUnique()
+//        }
+//
+//        val storm = Orm(connection)
+//        val insertedNumber = 100
+//
+//        assertThat(findInsertedCycle(storm, insertedNumber)).isNull()
+//
+//        val cycle = Cycle(insertedNumber, 12345, 13000)
+//        val result = storm.save(cycle)
+//
+//        assertThat(result.success).isTrue()
+//        val insertedCycle = findInsertedCycle(storm, insertedNumber)
+//        assertThat(insertedCycle?.number).isEqualTo(insertedNumber)
+//    }
+
+    private fun <T> insertOne(connection: Connection, test: T, factory: () -> T) : Orm where T: Any {
+        execute(connection, listOf (
+                "drop table if exists test",
+                "create table test(id integer primary key autoincrement, text varchar(80))"))
+
+        Orm(connection).let { storm ->
+            storm.save(test)
+            return storm
         }
+    }
 
-        val storm = Orm(connection)
-        val insertedNumber = 100
+    @Test
+    fun insertWithoutKey() {
+        @Entity("test")
+        data class Test(var text: String? = null)
 
-        assertThat(findInsertedCycle(storm, insertedNumber)).isNull()
+        insertOne(connection, Test("Cedric"), { -> Test() }).let { storm ->
+            val insertedTest = storm.into { -> Test() }
+                    .query(select().where("text").eq("Cedric"))
+                    .runUnique()
+            assertThat(insertedTest?.text).isEqualTo("Cedric")
+        }
+    }
 
-        val cycle = Cycle(insertedNumber, 12345, 13000)
-        val result = storm.save(cycle)
+    @Test
+    fun insertWithKey() {
+        @Entity("test")
+        data class Test(var id: Int? = null, var text: String? = null)
 
-        assertThat(result.success).isTrue()
-        val insertedCycle = findInsertedCycle(storm, insertedNumber)
-        assertThat(insertedCycle?.number).isEqualTo(insertedNumber)
+        insertOne(connection, Test(42, "Cedric"), { -> Test() }).let { storm ->
+            val insertedTest = storm.into { -> Test() }
+                    .query(select().where("id").eq(42))
+                    .runUnique()
+            assertThat(insertedTest?.text).isEqualTo("Cedric")
+        }
     }
 }

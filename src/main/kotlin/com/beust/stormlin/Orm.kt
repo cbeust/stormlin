@@ -99,11 +99,22 @@ class Orm(val conn: Connection) {
 
         fun run() : List<T> {
             if (builder != null) {
-                println("SQL: \"" + builder!!.toSql() + "\"")
+                builder?.let { b ->
+                    logSql(b.toSql())
+                    if (b.table == null) {
+                        b.table = tableNameFromEntity(factory())
+                    }
+                }
                 return runQuery(conn, builder!!.toSql(), factory)
             } else {
                 throw IllegalArgumentException(if (builder == null) "Null SqlBuilder" else "Null factory")
             }
+        }
+
+        fun runUnique() : T? {
+            val all = run()
+            if (all.size == 1) return all[0]
+            else throw IllegalArgumentException("Expected exactly one result but received ${all.size}")
         }
     }
 
@@ -157,7 +168,12 @@ class Orm(val conn: Connection) {
 //    }
 
 
-    fun log(s: String) = println(s)
+    val LOG_LEVEL = 1
+
+    fun log(level: Int, s: String) = if (level <= LOG_LEVEL) println(s) else {}
+
+    fun logSql(sql: String) = log(1, "[SQL] $sql")
+
     fun  save(entity: Any) : Result {
         var result = Result()
         val columns = arrayListOf<Pair<String, String>>()
@@ -169,22 +185,27 @@ class Orm(val conn: Connection) {
             val value = property.call(entity)
             if (value != null) columns.add(Pair(columnName, SqlUtils.toSqlValue(value)))
         }
-        println("Found columns: $columns")
+        log(2, "Found columns: $columns")
         if (columns.any()) {
-            val entity = entity::class.annotations.find { it.annotationClass.simpleName == "Entity" }
-            if (entity !is Entity) {
-                throw IllegalArgumentException("Couldn't find @Entity on class ${entity::class}")
-            } else {
-                val tableName = entity.name
-                val sql = "INSERT INTO $tableName (" + columns.map { it.first }.joinToString(", ") + ")" +
-                    " VALUES(" + columns.map { it.second }.joinToString(", ") + ")"
-                println("SQL: " + sql)
-                result = runQuery(conn, sql)
-            }
+            val tableName = tableNameFromEntity(entity)
+            val sql = "INSERT INTO $tableName (" + columns.map { it.first }.joinToString(", ") + ")" +
+                " VALUES(" + columns.map { it.second }.joinToString(", ") + ")"
+            logSql(sql)
+            result = runQuery(conn, sql)
         }
         return result
     }
+
+    private fun tableNameFromEntity(instance: Any) : String {
+        val entity = instance::class.annotations.find { it.annotationClass.simpleName == "Entity" }
+        if (entity !is Entity) {
+            throw IllegalArgumentException("Couldn't find @Entity on class ${entity::class}")
+        } else {
+            return entity.name
+        }
+    }
 }
+
 
 private fun runQuery(conn: Connection, query: String) : Result {
     var result = Result()
@@ -217,7 +238,8 @@ private fun <T> runQuery(conn: Connection, query: String, factory: () -> T) : Li
             if (it is KMutableProperty1) {
                 fieldNames.put(columnName(it), it)
             } else {
-                warn("Ignoring read-only property $it")
+                throw IllegalArgumentException("Property \"${it.name}\" on entity class ${kclass.simpleName} " +
+                        "needs to be a var")
             }
         }
 

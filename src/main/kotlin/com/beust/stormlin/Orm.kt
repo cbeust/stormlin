@@ -9,7 +9,7 @@ import kotlin.reflect.KClass
 import kotlin.reflect.KMutableProperty1
 import kotlin.reflect.KProperty1
 import kotlin.reflect.jvm.javaSetter
-import kotlin.reflect.memberProperties
+import kotlin.reflect.full.memberProperties
 
 interface HasTable {
     val tableName: String

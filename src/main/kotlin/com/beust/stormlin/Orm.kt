@@ -1,10 +1,7 @@
 package com.beust.stormlin
 
-import java.lang.reflect.InvocationHandler
-import java.lang.reflect.Method
-import java.lang.reflect.Proxy
 import java.sql.Connection
-import java.sql.DriverManager
+import java.sql.SQLException
 import kotlin.reflect.KClass
 import kotlin.reflect.KMutableProperty1
 import kotlin.reflect.KProperty1
@@ -19,6 +16,10 @@ fun select(vararg fields: String) : SqlBuilder {
     return SqlBuilder(operation = SqlBuilder.Operation.SELECT).apply {
         if (fields.any()) this.fields = fields.toList()
     }
+}
+
+object SqlUtils {
+    fun toSqlValue(value: Any) = if (value is String) "'$value'" else value.toString()
 }
 
 data class SqlBuilder(var operation: Operation = SqlBuilder.Operation.SELECT,
@@ -69,7 +70,7 @@ data class SqlBuilder(var operation: Operation = SqlBuilder.Operation.SELECT,
             var arg: String? = null) : Where(builder, field + " " + Conditional.EQ.toSql() + " $arg") {
         fun eq(arg: Any) : SqlBuilder {
             return builder.apply {
-                val sqlArg = if (arg is String) "'${arg.toString()}'" else arg.toString()
+                val sqlArg = SqlUtils.toSqlValue(arg)
                 whereClauses.add(WhereClause(this, field, Conditional.EQ, sqlArg))
             }
         }
@@ -112,51 +113,90 @@ class Orm(val conn: Connection) {
     }
 
 
-    fun <T> createProxy(itf: KClass<*>): T where T: Any {
-        val conn = DriverManager.getConnection("jdbc:mysql://localhost:3306/perry", "root", "aaaa")
-        println("Connection established: $conn")
-
-        class DbHandler : InvocationHandler {
-            override fun invoke(proxy: Any, method: Method, args: Array<out Any>?): Any {
-                val queries = method.getAnnotationsByType(Query::class.java)
-                val query = queries[0].value
-                val rt = queries[0].type
-                var query2 = query
-                if (args != null) {
-                    (0..args.size - 1).forEach {
-                        query2 = query2.replace("{$it}", args[it].toString())
-                    }
-                }
-                val actualType =
-                    if (rt == Any::class) {
-                        if (Collection::class.java.isAssignableFrom(method.returnType)) {
-                            throw IllegalArgumentException("Please specify a type= attribute on your @Query annotation")
-
-                        }
-                        method.returnType
-                    } else {
-                        rt.java
-                    }
-                val factory = actualType.getConstructor()
-                val queryResult = runQuery(conn, query2, factory as () -> T)
-                if (Collection::class.java.isAssignableFrom(method.returnType)) {
-                    return queryResult
-                } else {
-                    val c = queryResult as Collection<*>
-                    if (c.size == 1) return c.iterator().next()!!
-                    else throw IllegalArgumentException("The query $query returned more than one result for method" +
-                            " ${method.name}")
-                }
-            }
-        }
-
-        val proxy = Proxy.newProxyInstance(this.javaClass.classLoader, arrayOf(itf.java),
-                DbHandler()) as T
-        return proxy
-    }
+//    fun <T> createProxy(itf: KClass<*>): T where T: Any {
+//        val conn = DriverManager.getConnection("jdbc:mysql://localhost:3306/perry", "root", "aaaa")
+//        println("Connection established: $conn")
+//
+//        class DbHandler : InvocationHandler {
+//            override fun invoke(proxy: Any, method: Method, args: Array<out Any>?): Any {
+//                val queries = method.getAnnotationsByType(Query::class.java)
+//                val query = queries[0].value
+//                val rt = queries[0].type
+//                var query2 = query
+//                if (args != null) {
+//                    (0..args.size - 1).forEach {
+//                        query2 = query2.replace("{$it}", args[it].toString())
+//                    }
+//                }
+//                val actualType =
+//                    if (rt == Any::class) {
+//                        if (Collection::class.java.isAssignableFrom(method.returnType)) {
+//                            throw IllegalArgumentException("Please specify a type= attribute on your @Query annotation")
+//
+//                        }
+//                        method.returnType
+//                    } else {
+//                        rt.java
+//                    }
+//                val factory = actualType.getConstructor()
+//                val queryResult = runQuery(conn, query2, factory as () -> T)
+//                if (Collection::class.java.isAssignableFrom(method.returnType)) {
+//                    return queryResult
+//                } else {
+//                    val c = queryResult as Collection<*>
+//                    if (c.size == 1) return c.iterator().next()!!
+//                    else throw IllegalArgumentException("The query $query returned more than one result for method" +
+//                            " ${method.name}")
+//                }
+//            }
+//        }
+//
+//        val proxy = Proxy.newProxyInstance(this.javaClass.classLoader, arrayOf(itf.java),
+//                DbHandler()) as T
+//        return proxy
+//    }
 
 
     fun log(s: String) = println(s)
+    fun  save(entity: Any) : Result {
+        var result = Result()
+        val columns = arrayListOf<Pair<String, String>>()
+        entity::class.memberProperties.forEach { property ->
+            val columnAnnotations = property.annotations.filter { it -> it.annotationClass.simpleName!! == "Column" }
+            val columnName =
+                if (columnAnnotations.size == 1) (columnAnnotations[0] as Column).name
+                else property.name
+            val value = property.call(entity)
+            if (value != null) columns.add(Pair(columnName, SqlUtils.toSqlValue(value)))
+        }
+        println("Found columns: $columns")
+        if (columns.any()) {
+            val entity = entity::class.annotations.find { it.annotationClass.simpleName == "Entity" }
+            if (entity !is Entity) {
+                throw IllegalArgumentException("Couldn't find @Entity on class ${entity::class}")
+            } else {
+                val tableName = entity.name
+                val sql = "INSERT INTO $tableName (" + columns.map { it.first }.joinToString(", ") + ")" +
+                    " VALUES(" + columns.map { it.second }.joinToString(", ") + ")"
+                println("SQL: " + sql)
+                result = runQuery(conn, sql)
+            }
+        }
+        return result
+    }
+}
+
+private fun runQuery(conn: Connection, query: String) : Result {
+    var result = Result()
+    conn.createStatement().let { statement ->
+        try {
+            val rowCount = statement.executeUpdate(query)
+            result = Result(true, "$rowCount affected rows")
+        } catch(ex: SQLException) {
+            result = Result(false, throwable = ex)
+        }
+    }
+    return result
 }
 
 private fun <T> runQuery(conn: Connection, query: String, factory: () -> T) : List<T> where T: Any {
@@ -221,3 +261,7 @@ annotation class Query(val value: String, val type: KClass<out Any> = Any::class
 @Target(AnnotationTarget.PROPERTY)
 @Retention(AnnotationRetention.RUNTIME)
 annotation class Column(val name: String)
+
+@Target(AnnotationTarget.CLASS)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Entity(val name: String)

@@ -4,6 +4,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.sqlite.SQLiteException
 import org.testng.annotations.BeforeClass
 import org.testng.annotations.Test
+import java.io.File
 import java.io.InputStream
 import java.sql.Connection
 import java.sql.DriverManager
@@ -11,12 +12,14 @@ import java.sql.Statement
 import java.util.*
 
 class DbTest {
-    private val urlFile = "jdbc:sqlite:/tmp/stormlinTest.db"
+    private val file = File(System.getProperty("java.io.tmpdir"), "stormlinTest.db")
+    private val urlFile = "jdbc:sqlite:" + file.absolutePath
     private val urlMemory = "jdbc:sqlite::memory:"
-    private val connection = DriverManager.getConnection(urlMemory)
+    private val connection = DriverManager.getConnection(urlFile)
 
     @BeforeClass
     fun bc() {
+        println("Creating database in ${file.absolutePath}")
         val res = javaClass.classLoader.getResourceAsStream("perry-small.sql")
         if (res != null) {
             importSql(connection, res)
@@ -90,7 +93,7 @@ class DbTest {
     }
 
     @Test
-    fun multiplSelect() {
+    fun multipleSelect() {
         val storm = Orm(connection)
         val cycles = storm
                 .into { -> Cycle() }
@@ -100,5 +103,28 @@ class DbTest {
         assertThat(cycles[0].start).isEqualTo(50)
         assertThat(cycles[1].start).isEqualTo(100)
         assertThat(cycles[2].start).isEqualTo(150)
+    }
+
+    @Test
+    fun insert() {
+        fun findInsertedCycle(storm: Orm, number: Int) : Cycle? {
+            val insertedCycles = storm
+                    .into { -> Cycle() }
+                    .query(select().from("cycles").where("number").eq(number))
+                    .run()
+            return if (insertedCycles.size == 1) insertedCycles.first() else null
+        }
+
+        val storm = Orm(connection)
+        val insertedNumber = 100
+
+        assertThat(findInsertedCycle(storm, insertedNumber)).isNull()
+
+        val cycle = Cycle(insertedNumber, 12345, 13000)
+        val result = storm.save(cycle)
+
+        assertThat(result.success).isTrue()
+        val insertedCycle = findInsertedCycle(storm, insertedNumber)
+        assertThat(insertedCycle?.number).isEqualTo(insertedNumber)
     }
 }

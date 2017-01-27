@@ -14,19 +14,19 @@ fun main(argv: Array<String>) {
     println("Cycles: " + cycles)
 }
 
-fun queryStrings(orm: Orm) {
-    val perry = orm.createProxy<Perry>(Perry::class)
-
-    val cycles = perry.getCycles()
-    println("Found ${cycles.size} cycles: " + cycles[0])
-
-    val book = perry.getBook(2000)
-    println("Found book: $book")
-
-    val books = perry.getBooks(650, 652)
-    println("Found books:\n")
-    books.forEach(::println)
-}
+//fun queryStrings(orm: Orm) {
+//    val perry = orm.createProxy<Perry>(Perry::class)
+//
+//    val cycles = perry.getCycles()
+//    println("Found ${cycles.size} cycles: " + cycles[0])
+//
+//    val book = perry.getBook(2000)
+//    println("Found book: $book")
+//
+//    val books = perry.getBooks(650, 652)
+//    println("Found books:\n")
+//    books.forEach(::println)
+//}
 
 interface Perry {
     @Query("select * from cycles", type = Cycle::class)
@@ -39,6 +39,7 @@ interface Perry {
     fun getBooks(start: Int, end: Int) : List<Book>
 }
 
+@Entity(name = "hefte")
 data class Book(
         var number: Int? = null,
         var title: String? = null,
@@ -48,6 +49,7 @@ data class Book(
         @Column(name = "german_file")
         var germanFile: String? = null)
 
+@Entity(name = "cycles")
 data class Cycle(
     var number: Int? = null,
     var start: Int? = null,

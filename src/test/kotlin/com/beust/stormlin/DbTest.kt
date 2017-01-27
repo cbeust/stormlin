@@ -13,7 +13,7 @@ import java.util.*
 class DbTest {
     private val urlFile = "jdbc:sqlite:/tmp/stormlinTest.db"
     private val urlMemory = "jdbc:sqlite::memory:"
-    private val connection = DriverManager.getConnection(urlFile)
+    private val connection = DriverManager.getConnection(urlMemory)
 
     @BeforeClass
     fun bc() {
@@ -27,7 +27,8 @@ class DbTest {
 
     private fun importSql(conn: Connection, ins: InputStream) {
         val s = Scanner(ins)
-        s.useDelimiter("(;(\r)?\n)|(--\n)")
+        s.useDelimiter("(;(\r)?\n)|(--(\r)?\n)")
+//        s.useDelimiter("\n--\n")
         var st: Statement? = null
         var line: String? = null
         try {

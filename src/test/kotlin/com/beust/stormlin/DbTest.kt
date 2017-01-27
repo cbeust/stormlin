@@ -19,7 +19,6 @@ class DbTest {
 
     @BeforeClass
     fun bc() {
-        println("Creating database in ${file.absolutePath}")
         val res = javaClass.classLoader.getResourceAsStream("perry-small.sql")
         if (res != null) {
             importSql(connection, res)
@@ -108,28 +107,6 @@ class DbTest {
         assertThat(cycles[2].start).isEqualTo(150)
     }
 
-//    @Test
-//    fun insertWithKey() {
-//        fun findInsertedCycle(storm: Orm, number: Int) : Cycle? {
-//            return storm
-//                    .into { -> Cycle() }
-//                    .query(select().from("cycles").where("number").eq(number))
-//                    .runUnique()
-//        }
-//
-//        val storm = Orm(connection)
-//        val insertedNumber = 100
-//
-//        assertThat(findInsertedCycle(storm, insertedNumber)).isNull()
-//
-//        val cycle = Cycle(insertedNumber, 12345, 13000)
-//        val result = storm.save(cycle)
-//
-//        assertThat(result.success).isTrue()
-//        val insertedCycle = findInsertedCycle(storm, insertedNumber)
-//        assertThat(insertedCycle?.number).isEqualTo(insertedNumber)
-//    }
-
     private fun <T> insertOne(connection: Connection, test: T, factory: () -> T) : Orm where T: Any {
         execute(connection, listOf (
                 "drop table if exists test",
@@ -144,13 +121,14 @@ class DbTest {
     @Test
     fun insertWithoutKey() {
         @Entity("test")
-        data class Test(var text: String? = null)
+        data class Test(var id: Int? = null, var text: String? = null)
 
-        insertOne(connection, Test("Cedric"), { -> Test() }).let { storm ->
+        insertOne(connection, Test(null, "Cedric"), { -> Test() }).let { storm ->
             val insertedTest = storm.into { -> Test() }
                     .query(select().where("text").eq("Cedric"))
                     .runUnique()
             assertThat(insertedTest?.text).isEqualTo("Cedric")
+            assertThat(insertedTest?.id).isNotNull()
         }
     }
 
@@ -164,6 +142,7 @@ class DbTest {
                     .query(select().where("id").eq(42))
                     .runUnique()
             assertThat(insertedTest?.text).isEqualTo("Cedric")
+            assertThat(insertedTest?.id).isEqualTo(42)
         }
     }
 }

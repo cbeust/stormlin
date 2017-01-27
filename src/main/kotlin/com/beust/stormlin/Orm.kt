@@ -8,8 +8,8 @@ import java.sql.DriverManager
 import kotlin.reflect.KClass
 import kotlin.reflect.KMutableProperty1
 import kotlin.reflect.KProperty1
-import kotlin.reflect.jvm.javaSetter
 import kotlin.reflect.full.memberProperties
+import kotlin.reflect.jvm.javaSetter
 
 interface HasTable {
     val tableName: String
@@ -24,7 +24,7 @@ fun select(vararg fields: String) : SqlBuilder {
 data class SqlBuilder(var operation: Operation = SqlBuilder.Operation.SELECT,
         var table: String? = null,
         var fields : List<String> = listOf("*"),
-        val whereClauses: MutableList<WhereClause> = mutableListOf()) {
+        val whereClauses: MutableList<Where> = mutableListOf()) {
 
     enum class Operation {
         SELECT
@@ -58,23 +58,30 @@ data class SqlBuilder(var operation: Operation = SqlBuilder.Operation.SELECT,
         fun toSql() = sqlOp
     }
 
-    class WhereClause(val builder: SqlBuilder, var field: String? = null,
+    open class Where(open val builder: SqlBuilder, val clause: String) {
+        override fun toString() : String {
+            return clause
+        }
+    }
+
+    class WhereClause(override val builder: SqlBuilder, var field: String? = null,
             var conditional: Conditional? = null,
-            var arg: String? = null) {
+            var arg: String? = null) : Where(builder, field + " " + Conditional.EQ.toSql() + " $arg") {
         fun eq(arg: Any) : SqlBuilder {
             return builder.apply {
                 val sqlArg = if (arg is String) "'${arg.toString()}'" else arg.toString()
                 whereClauses.add(WhereClause(this, field, Conditional.EQ, sqlArg))
             }
         }
-
-        override fun toString() : String {
-            return field + " " + Conditional.EQ.toSql() + " $arg"
-        }
     }
 
     fun where(s: String): WhereClause {
         return WhereClause(this, field = s)
+    }
+
+    fun whereAll(s: String) : SqlBuilder {
+        whereClauses.add(Where(this, s))
+        return this
     }
 
 //    fun  query(eq: Any): Any {}

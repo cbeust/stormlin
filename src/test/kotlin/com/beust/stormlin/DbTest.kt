@@ -1,6 +1,6 @@
 package com.beust.stormlin
 
-import org.assertj.core.api.Assertions
+import org.assertj.core.api.Assertions.assertThat
 import org.sqlite.SQLiteException
 import org.testng.annotations.BeforeClass
 import org.testng.annotations.Test
@@ -29,6 +29,7 @@ class DbTest {
         val s = Scanner(ins)
         s.useDelimiter("(;(\r)?\n)|(--(\r)?\n)")
 //        s.useDelimiter("\n--\n")
+        conn.createStatement()
         var st: Statement? = null
         var line: String? = null
         try {
@@ -73,18 +74,31 @@ class DbTest {
             else throw AssertionError("Couldn't find id $id")
         }
 
-        Assertions.assertThat(getId(1)).isEqualTo("foo")
-        Assertions.assertThat(getId(2)).isEqualTo("bar")
+        assertThat(getId(1)).isEqualTo("foo")
+        assertThat(getId(2)).isEqualTo("bar")
     }
 
     @Test
     fun simpleSelect() {
         val storm = Orm(connection)
         val cycles = storm
-                .into({ -> Cycle() })
+                .into { -> Cycle() }
                 .query(select().from("cycles").where("number").eq(7))
                 .run()
-        Assertions.assertThat(cycles.size).isEqualTo(1)
-        Assertions.assertThat(cycles[0].englishTitle).isEqualTo("The Cappins")
+        assertThat(cycles.size).isEqualTo(1)
+        assertThat(cycles[0].englishTitle).isEqualTo("The Cappins")
+    }
+
+    @Test
+    fun multiplSelect() {
+        val storm = Orm(connection)
+        val cycles = storm
+                .into { -> Cycle() }
+                .query(select().from("cycles").whereAll("number >= 2 and number <= 4"))
+                .run()
+        assertThat(cycles.size).isEqualTo(3)
+        assertThat(cycles[0].start).isEqualTo(50)
+        assertThat(cycles[1].start).isEqualTo(100)
+        assertThat(cycles[2].start).isEqualTo(150)
     }
 }

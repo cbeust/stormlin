@@ -15,7 +15,7 @@ class DbTest {
     private val file = File(System.getProperty("java.io.tmpdir"), "stormlinTest.db")
     private val urlFile = "jdbc:sqlite:" + file.absolutePath
     private val urlMemory = "jdbc:sqlite::memory:"
-    private val connection = DriverManager.getConnection(urlMemory)
+    private val connection = DriverManager.getConnection(urlFile)
 
     @BeforeClass
     fun bc() {
@@ -107,12 +107,13 @@ class DbTest {
         assertThat(cycles[2].start).isEqualTo(150)
     }
 
-    private fun <T> insertOne(connection: Connection, test: T, factory: () -> T) : Orm where T: Any {
+    private fun <T> insertOne(connection: Connection, test: T, factory: () -> T,
+            orm: Orm? = null) : Orm where T: Any {
         execute(connection, listOf (
                 "drop table if exists test",
                 "create table test(id integer primary key autoincrement, text varchar(80))"))
 
-        Orm(connection).let { storm ->
+        (orm ?: Orm(connection)).let { storm ->
             storm.save(test)
             return storm
         }
@@ -145,4 +146,22 @@ class DbTest {
             assertThat(insertedTest?.id).isEqualTo(42)
         }
     }
+
+    @Test
+    fun insertTwice() {
+        @Entity("test")
+        data class Test(var id: Int? = null, var text: String? = null)
+
+        val storm = Orm(connection)
+
+        insertOne(connection, Test(42, "Cedric"), { -> Test() }, storm)
+        insertOne(connection, Test(42, "Cedric"), { -> Test() }, storm).let { storm ->
+            val insertedTest = storm.into { -> Test() }
+                    .query(select().where("id").eq(42))
+                    .runUnique()
+            assertThat(insertedTest?.text).isEqualTo("Cedric")
+            assertThat(insertedTest?.id).isEqualTo(42)
+        }
+    }
+
 }

@@ -8,7 +8,7 @@ fun main(argv: Array<String>) {
     val orm = Orm(conn)
 
     val cycles = orm
-        .into{ -> Cycle() }
+        .into{ ::Cycle }
         .query(select().from("cycles").where("number").eq(7))
         .run()
     println("Cycles: " + cycles)

@@ -166,6 +166,8 @@ private fun <T> runQuery(conn: Connection, query: String, factory: () -> T) : Li
     conn.createStatement().let { statement ->
         val rs = statement.executeQuery(query)
         val fieldNames = hashMapOf<String, KMutableProperty1<*, *>>()
+        println("KCLASS: " + kclass)
+        println("PROPERTIES: " + kclass.memberProperties)
         kclass.memberProperties.forEach {
             if (it is KMutableProperty1) {
                 fieldNames.put(columnName(it), it)

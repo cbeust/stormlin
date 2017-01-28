@@ -119,13 +119,14 @@ class DbTest {
         }
     }
 
+    @Entity("test")
+    data class TestEntity(var id: Int? = null, var text: String? = null)
+
     @Test
     fun insertWithoutKey() {
-        @Entity("test")
-        data class Test(var id: Int? = null, var text: String? = null)
 
-        insertOne(connection, Test(null, "Cedric"), { -> Test() }).let { storm ->
-            val insertedTest = storm.into { -> Test() }
+        insertOne(connection, TestEntity(null, "Cedric"), { -> TestEntity() }).let { storm ->
+            val insertedTest = storm.into { -> TestEntity() }
                     .query(select().where("text").eq("Cedric"))
                     .runUnique()
             assertThat(insertedTest?.text).isEqualTo("Cedric")
@@ -135,11 +136,8 @@ class DbTest {
 
     @Test
     fun insertWithKey() {
-        @Entity("test")
-        data class Test(var id: Int? = null, var text: String? = null)
-
-        insertOne(connection, Test(42, "Cedric"), { -> Test() }).let { storm ->
-            val insertedTest = storm.into { -> Test() }
+        insertOne(connection, TestEntity(42, "Cedric"), { -> TestEntity() }).let { storm ->
+            val insertedTest = storm.into { -> TestEntity() }
                     .query(select().where("id").eq(42))
                     .runUnique()
             assertThat(insertedTest?.text).isEqualTo("Cedric")
@@ -149,19 +147,36 @@ class DbTest {
 
     @Test
     fun insertTwice() {
-        @Entity("test")
-        data class Test(var id: Int? = null, var text: String? = null)
-
         val storm = Orm(connection)
 
-        insertOne(connection, Test(42, "Cedric"), { -> Test() }, storm)
-        insertOne(connection, Test(42, "Cedric"), { -> Test() }, storm).let { storm ->
-            val insertedTest = storm.into { -> Test() }
+        insertOne(connection, TestEntity(42, "Cedric"), { -> TestEntity() }, storm)
+        insertOne(connection, TestEntity(42, "Cedric"), { -> TestEntity() }, storm).let { storm ->
+            val insertedTest = storm.into { -> TestEntity() }
                     .query(select().where("id").eq(42))
                     .runUnique()
             assertThat(insertedTest?.text).isEqualTo("Cedric")
             assertThat(insertedTest?.id).isEqualTo(42)
         }
+    }
+
+    @Test
+    fun overrideSameObject() {
+        @Entity("test")
+        data class Test(var id: Int? = null, var text: String? = null)
+
+        val storm = Orm(connection)
+        val text = "Cedric"
+        fun insertWithId(id: Int) {
+            insertOne(connection, Test(id, text), { -> Test() }, storm).let { storm ->
+                val insertedTest = storm.into { -> Test() }
+                        .query(select().where("text").eq(text))
+                        .runUnique()
+                assertThat(insertedTest?.text).isEqualTo(text)
+                assertThat(insertedTest?.id).isEqualTo(id)
+            }
+        }
+        insertWithId(42)
+        insertWithId(43)
     }
 
 }
